@@ -20,9 +20,9 @@ parser.add_argument(
 parser.add_argument(
     "--save-as",          type=str,            default=None, help="Sets the filename for the output of this command [e.g. --save-as='out.txt']")
 
-@pwndbg.commands.ArgparsedCommand(parser, command_name="strings", category=CommandCategory.LINUX)
+@pwndbg.commands.ArgparsedCommand(parser, category=CommandCategory.LINUX)
 @pwndbg.commands.OnlyWhenRunning
-def strings(N: int=4, mapping_name: str=None, save_as: str=None):
+def strings(n: int=4, mapping_name: str=None, save_as: str=None):
     """
     Extracts and displays ASCII strings from all readable memory pages of the debugged process.
     Only pages with read permissions (PF_R) are processed. See PF_X, PF_R, PF_W
@@ -34,17 +34,8 @@ def strings(N: int=4, mapping_name: str=None, save_as: str=None):
     if mapping_name:
         readable_pages = [m for m in readable_pages if mapping_name in m.objfile]
 
-    if save_as:
-        # create new file if one does not exist
-        if not os.path.exists(save_as):
-            with open(save_as, 'w'):
-                pass
-        else:
-            # Remove content from a file
-            open(save_as, 'w').close()
-
     for page in readable_pages:
-        count = page.end - page.start
+        count = page.memsz
         start_address = page.vaddr
 
         try:
@@ -54,7 +45,7 @@ def strings(N: int=4, mapping_name: str=None, save_as: str=None):
             continue  # skip if access is denied
 
         # all strings in the `data`
-        strings: List[bytes] = re.findall(rb'[ -~]{%d,}' % N, data)
+        strings: List[bytes] = re.findall(rb'[ -~]{%d,}' % n, data)
         decoded_strings: List[str] = [s.decode('ascii', errors='ignore') for s in strings]
 
         if not save_as:
@@ -62,5 +53,5 @@ def strings(N: int=4, mapping_name: str=None, save_as: str=None):
                 print(string)
             continue
 
-        with open(save_as, "a") as f:
+        with open(save_as, "w") as f:
            f.writelines(string + "\n" for string in decoded_strings)
