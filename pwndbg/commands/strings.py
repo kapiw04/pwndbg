@@ -1,13 +1,13 @@
 from __future__ import annotations
+
 import argparse
-from typing import List
-import pwndbg
-import pwndbg.commands
-import pwndbg.aglib.memory
-from pwndbg.commands import CommandCategory
-
 import re
+from typing import List
 
+import pwndbg
+import pwndbg.aglib.memory
+import pwndbg.commands
+from pwndbg.commands import CommandCategory
 from pwndbg.lib.memory import Page
 
 parser = argparse.ArgumentParser(description="Extracts and displays ASCII strings from readable memory pages of the debugged process.")
