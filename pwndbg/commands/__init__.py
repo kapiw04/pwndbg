@@ -761,10 +761,10 @@ def load_commands() -> None:
     import pwndbg.commands.search
     import pwndbg.commands.sigreturn
     import pwndbg.commands.spray
+    import pwndbg.commands.strings
     import pwndbg.commands.telescope
     import pwndbg.commands.valist
     import pwndbg.commands.vmmap
     import pwndbg.commands.windbg
     import pwndbg.commands.xinfo
     import pwndbg.commands.xor
-    import pwndbg.commands.strings
