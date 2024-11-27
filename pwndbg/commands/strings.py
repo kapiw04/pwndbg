@@ -10,25 +10,20 @@ import re
 
 from pwndbg.lib.memory import Page
 
-parser = argparse.ArgumentParser(description="Extracts and displays ASCII strings from all readable memory pages of the debugged process.")
+parser = argparse.ArgumentParser(description="Extracts and displays ASCII strings from readable memory pages of the debugged process.")
 
 parser.add_argument(
-    "-n",                 type=int,            default=4,    help="Minimum length of ASCII strings to include")
+    "-n", type=int, default=4, help="Minimum length of ASCII strings to include")
 parser.add_argument(
-    "page_names",       type=str, nargs="*", default=[], help="Mapping to search [e.g. libc].\nCan be used with multiple mappings [e.g libc heap stack]")
+    "page_names", type=str, nargs="*", default=[], help="Mapping to search [e.g. libc].\nCan be used with multiple mappings [e.g libc heap stack]")
 parser.add_argument(
-    "--save-as",          type=str,            default=None, help="Sets the filename for the output of this command [e.g. --save-as='out.txt']")
+    "--save-as", type=str, default=None, help="Sets the filename for the output of this command [e.g. --save-as='out.txt']")
 
 @pwndbg.commands.ArgparsedCommand(parser, category=CommandCategory.LINUX)
 @pwndbg.commands.OnlyWhenRunning
 def strings(n: int=4, page_names: List[str]=[], save_as: str=None):
-    """
-    Extracts and displays ASCII strings from all readable memory pages of the debugged process.
-    Only pages with read permissions (PF_R) are processed. See PF_X, PF_R, PF_W
-    """
-
-    # extract pages with readable permission
-    readable_pages: List[Page] = [page for page in pwndbg.aglib.vmmap.get() if page.flags & 4]
+    # Extract pages with PROT_READ permission
+    readable_pages: List[Page] = [page for page in pwndbg.aglib.vmmap.get() if page.read]
 
     for page in readable_pages:
         if page_names and not any(name in page.objfile for name in page_names):
