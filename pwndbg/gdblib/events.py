@@ -8,15 +8,16 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
+from collections import deque
 from enum import Enum
 from enum import auto
 from functools import partial
 from functools import wraps
 from typing import Any
 from typing import Callable
+from typing import Deque
 from typing import Dict
 from typing import List
-from typing import Set
 from typing import TypeVar
 
 import gdb
@@ -75,6 +76,61 @@ class StartEvent:
 gdb.events.start = StartEvent()
 
 
+def _is_safe_event_packet():
+    try:
+        gdb.selected_frame()
+    except gdb.error as e:
+        if "Remote 'g' packet reply is too long" in str(e):
+            return False
+    return True
+
+
+def _is_safe_event_thread():
+    try:
+        gdb.newest_frame()
+    except gdb.error as e:
+        if "Selected thread is running" in str(e):
+            return False
+    return True
+
+
+def wrap_safe_event_handler(event_handler: Callable[P, T]) -> Callable[P, T]:
+    """
+    Wraps an event handler to ensure it is only executed when the event is safe.
+    Invalid events are queued and executed later when safe.
+
+    Note: Avoid using `gdb.post_event` because of another bug in gdbserver
+    where the `gdb.newest_frame` function may not work properly.
+
+    Workaround to fix bug in gdbserver: https://github.com/pwndbg/pwndbg/issues/2576
+    """
+    queued_invalid_events: Deque[Callable[..., Any]] = deque()
+
+    def _loop_until_thread_ok():
+        if not queued_invalid_events:
+            return
+
+        if not _is_safe_event_thread():
+            gdb.post_event(_loop_until_thread_ok)
+            return
+
+        while queued_invalid_events:
+            queued_invalid_events.popleft()()
+
+    @wraps(event_handler)
+    def _inner_handler(*a: P.args, **kw: P.kwargs):
+        if _is_safe_event_packet():
+            while queued_invalid_events:
+                queued_invalid_events.popleft()()
+            event_handler(*a, **kw)
+            return
+
+        queued_invalid_events.append(lambda: event_handler(*a, **kw))
+        gdb.post_event(_loop_until_thread_ok)
+
+    return _inner_handler
+
+
 class HandlerPriority(Enum):
     """
     A priority level for an event handler, ordered from highest to lowest priority.
@@ -102,13 +158,6 @@ registered: Dict[Any, Dict[HandlerPriority, List[Callable[..., Any]]]] = {
 # This is a map from event to the actual handler connected to GDB
 connected = {}
 
-
-# When performing remote debugging, gdbserver is very noisy about which
-# objects are loaded.  This greatly slows down the debugging session.
-# In order to combat this, we keep track of which objfiles have been loaded
-# this session, and only emit objfile events for each *new* file.
-objfile_cache: Dict[str, Set[str]] = {}
-
 # Keys are gdb.events.*
 paused = defaultdict(bool)
 
@@ -122,11 +171,11 @@ def unpause(event_registry) -> None:
 
 
 def connect(
-    func: Callable[P, T],
+    func: Callable[[], T],
     event_handler: Any,
     name: str = "",
     priority: HandlerPriority = HandlerPriority.LOW,
-) -> Callable[P, T]:
+) -> Callable[[], T]:
     if debug:
         print("Connecting", func.__name__, event_handler)
 
@@ -137,18 +186,6 @@ def connect(
 
         if debug:
             sys.stdout.write(f"{name!r} {func.__module__}.{func.__name__} {a!r}\n")
-
-        if a and isinstance(a[0], gdb.NewObjFileEvent):
-            objfile = a[0].new_objfile
-            handler = f"{func.__module__}.{func.__name__}"
-            path = objfile.filename
-            dispatched = objfile_cache.get(path, set())
-
-            if handler in dispatched:
-                return None
-
-            dispatched.add(handler)
-            objfile_cache[path] = dispatched
 
         try:
             # Don't pass the event along to the decorated function.
@@ -163,6 +200,10 @@ def connect(
     registered[event_handler].setdefault(priority, []).append(caller)
     if event_handler not in connected:
         handle = partial(invoke_event, event_handler)
+
+        if event_handler == gdb.events.new_objfile:
+            handle = wrap_safe_event_handler(handle)
+
         event_handler.connect(handle)
         connected[event_handler] = handle
     return func
@@ -253,9 +294,3 @@ def _start_exit() -> None:
 @stop
 def _start_stop() -> None:
     gdb.events.start.on_stop()
-
-
-@exit
-def _reset_objfiles() -> None:
-    global objfile_cache
-    objfile_cache = {}
