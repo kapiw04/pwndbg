@@ -29,6 +29,7 @@ parser.add_argument(
     help="Sets the filename for the output of this command [e.g. --save-as='out.txt']",
 )
 
+
 @pwndbg.commands.ArgparsedCommand(parser, category=CommandCategory.LINUX)
 @pwndbg.commands.OnlyWhenRunning
 def strings(n: int = 4, page_names: List[str] = [], save_as: str = None):
